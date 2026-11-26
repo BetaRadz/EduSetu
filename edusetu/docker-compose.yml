@@ -1,0 +1,37 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: edusetu-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: edusetu
+      POSTGRES_USER: edusetu
+      POSTGRES_PASSWORD: edusetu_local_dev_only
+    ports:
+      - "5432:5432"
+    volumes:
+      - edusetu_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U edusetu -d edusetu"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    container_name: edusetu-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - edusetu_redis_data:/data
+    command: ["redis-server", "--appendonly", "yes"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  edusetu_postgres_data:
+  edusetu_redis_data:

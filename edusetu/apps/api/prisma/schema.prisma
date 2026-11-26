@@ -1,0 +1,542 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+  DELETION_REQUESTED
+  DELETED
+}
+
+enum InstitutionType {
+  SCHOOL
+  COLLEGE
+  UNIVERSITY
+  OTHER
+}
+
+enum InstitutionStatus {
+  DRAFT
+  PENDING_VERIFICATION
+  VERIFIED
+  SUSPENDED
+  ARCHIVED
+}
+
+enum MembershipStatus {
+  INVITED
+  ACTIVE
+  SUSPENDED
+  REMOVED
+}
+
+enum ClaimStatus {
+  SUBMITTED
+  IN_REVIEW
+  APPROVED
+  REJECTED
+  WITHDRAWN
+}
+
+enum ReviewPerspective {
+  PARENT_GUARDIAN
+  STUDENT
+  ALUMNI
+}
+
+enum ReviewStatus {
+  PENDING
+  PUBLISHED
+  REJECTED
+  HIDDEN
+  REMOVED
+}
+
+enum AffiliationStatus {
+  NOT_VERIFIED
+  PENDING
+  VERIFIED
+  REJECTED
+}
+
+enum ModerationStatus {
+  OPEN
+  IN_REVIEW
+  ACTIONED
+  DISMISSED
+  APPEALED
+  CLOSED
+}
+
+enum ModerationActionType {
+  NO_ACTION
+  PUBLISH_CONTENT
+  REJECT_CONTENT
+  REQUEST_EDIT
+  HIDE_CONTENT
+  REMOVE_CONTENT
+  RESTORE_CONTENT
+  WARN_USER
+  SUSPEND_USER
+}
+
+enum RoleScope {
+  GLOBAL
+  INSTITUTION
+}
+
+enum BillingInterval {
+  MONTHLY
+  ANNUAL
+}
+
+enum SubscriptionStatus {
+  PENDING_AUTHORIZATION
+  ACTIVE
+  PAST_DUE
+  GRACE_PERIOD
+  HALTED
+  PAUSED
+  CANCELLED_AT_PERIOD_END
+  CANCELLED
+  EXPIRED
+}
+
+enum PaymentEventStatus {
+  RECEIVED
+  PROCESSING
+  PROCESSED
+  FAILED
+  IGNORED
+}
+
+enum InvoiceStatus {
+  DRAFT
+  ISSUED
+  PAID
+  OVERDUE
+  VOID
+  REFUNDED
+}
+
+enum RefundStatus {
+  PENDING
+  PROCESSED
+  FAILED
+}
+
+model User {
+  id                String                  @id @default(cuid())
+  externalIssuer    String
+  externalSubject   String
+  email             String?                 @unique
+  displayName       String?
+  status            UserStatus              @default(ACTIVE)
+  createdAt         DateTime                @default(now())
+  updatedAt         DateTime                @updatedAt
+  roleAssignments   UserRoleAssignment[]
+  memberships       OrganizationMembership[]
+  claims            InstitutionClaim[]       @relation("Claimant")
+  reviews           Review[]
+  reviewReports     ReviewReport[]
+  institutionResponses InstitutionResponse[] @relation("InstitutionResponseAuthor")
+  moderationActions ModerationAction[] @relation("ModerationActor")
+  reviewedClaims   InstitutionClaim[] @relation("ClaimReviewer")
+  auditLogs         AuditLog[]               @relation("AuditActor")
+
+  @@unique([externalIssuer, externalSubject])
+  @@index([status, createdAt])
+}
+
+model Role {
+  id             String                   @id @default(cuid())
+  key            String                   @unique
+  name           String
+  scope          RoleScope
+  permissions    RolePermission[]
+  assignments    UserRoleAssignment[]
+  memberships    OrganizationMembership[]
+  createdAt      DateTime                 @default(now())
+  updatedAt      DateTime                 @updatedAt
+}
+
+model Permission {
+  id          String           @id @default(cuid())
+  key         String           @unique
+  description String
+  roles       RolePermission[]
+}
+
+model RolePermission {
+  roleId       String
+  permissionId String
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@index([permissionId])
+}
+
+model UserRoleAssignment {
+  userId     String
+  roleId     String
+  assignedAt DateTime @default(now())
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role       Role     @relation(fields: [roleId], references: [id], onDelete: Restrict)
+
+  @@id([userId, roleId])
+  @@index([roleId])
+}
+
+model Institution {
+  id             String                    @id @default(cuid())
+  slug           String                    @unique
+  name           String
+  type           InstitutionType
+  status         InstitutionStatus         @default(DRAFT)
+  description    String?                   @db.VarChar(4000)
+  websiteUrl     String?
+  emailDomain    String?
+  phonePublic    String?
+  addressLine1   String?
+  addressLine2   String?
+  locality       String?
+  city           String
+  state          String
+  postalCode     String?
+  countryCode    String                    @default("IN")
+  verifiedAt     DateTime?
+  createdAt      DateTime                  @default(now())
+  updatedAt      DateTime                  @updatedAt
+  campuses       Campus[]
+  memberships    OrganizationMembership[]
+  claims         InstitutionClaim[]
+  reviews        Review[]
+  responses      InstitutionResponse[]
+  moderationCases ModerationCase[]
+  subscriptions   Subscription[]
+
+  @@index([name])
+  @@index([city, state, type, status])
+  @@index([status, createdAt])
+}
+
+model Campus {
+  id            String      @id @default(cuid())
+  institutionId String
+  name          String
+  slug          String
+  city          String?
+  state         String?
+  isActive      Boolean     @default(true)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+  institution   Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+
+  @@unique([institutionId, slug])
+  @@index([institutionId, isActive])
+}
+
+model OrganizationMembership {
+  id            String           @id @default(cuid())
+  userId        String
+  institutionId String
+  roleId        String
+  status        MembershipStatus @default(INVITED)
+  invitedAt     DateTime         @default(now())
+  acceptedAt    DateTime?
+  user          User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  institution   Institution     @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  role          Role             @relation(fields: [roleId], references: [id], onDelete: Restrict)
+
+  @@unique([userId, institutionId])
+  @@index([institutionId, status])
+  @@index([userId, status])
+}
+
+model InstitutionClaim {
+  id             String      @id @default(cuid())
+  institutionId  String
+  claimantUserId String
+  status         ClaimStatus @default(SUBMITTED)
+  businessReason String?     @db.VarChar(2000)
+  evidenceAssetId String?
+  reviewedById   String?
+  reviewedBy     User?       @relation("ClaimReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+  reviewedAt     DateTime?
+  decisionNote   String?     @db.VarChar(2000)
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+  institution    Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  claimant       User        @relation("Claimant", fields: [claimantUserId], references: [id], onDelete: Restrict)
+
+  @@index([institutionId, status])
+  @@unique([institutionId, claimantUserId])
+  @@index([claimantUserId, createdAt])
+}
+
+model ReviewCategory {
+  id          String               @id @default(cuid())
+  key         String               @unique
+  label       String
+  description String?
+  isActive    Boolean              @default(true)
+  sortOrder   Int                  @default(0)
+  scores      ReviewCategoryScore[]
+}
+
+model Review {
+  id                String                  @id @default(cuid())
+  institutionId     String
+  authorUserId      String
+  perspective       ReviewPerspective
+  overallRating     Int
+  title             String?                 @db.VarChar(120)
+  body              String                  @db.VarChar(5000)
+  experienceYear    Int?
+  affiliationStatus AffiliationStatus       @default(NOT_VERIFIED)
+  status            ReviewStatus            @default(PENDING)
+  publishedAt       DateTime?
+  createdAt         DateTime                @default(now())
+  updatedAt         DateTime                @updatedAt
+  institution       Institution             @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  author            User                    @relation(fields: [authorUserId], references: [id], onDelete: Restrict)
+  categoryScores    ReviewCategoryScore[]
+  revisions         ReviewRevision[]
+  responses         InstitutionResponse[]
+  reports           ReviewReport[]
+  moderationCases   ModerationCase[]
+
+  @@unique([institutionId, authorUserId])
+  @@index([institutionId, status, publishedAt])
+  @@index([authorUserId, createdAt])
+  @@index([status, createdAt])
+}
+
+model ReviewCategoryScore {
+  reviewId  String
+  categoryId String
+  score     Int
+  review    Review         @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  category  ReviewCategory @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+
+  @@id([reviewId, categoryId])
+  @@index([categoryId, score])
+}
+
+model ReviewRevision {
+  id          String   @id @default(cuid())
+  reviewId    String
+  title       String?
+  body        String   @db.VarChar(5000)
+  overallRating Int
+  editedAt    DateTime @default(now())
+  review      Review   @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+
+  @@index([reviewId, editedAt])
+}
+
+model InstitutionResponse {
+  id            String      @id @default(cuid())
+  reviewId      String      @unique
+  institutionId String
+  authorUserId  String
+  author        User        @relation("InstitutionResponseAuthor", fields: [authorUserId], references: [id], onDelete: Restrict)
+  body          String      @db.VarChar(3000)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+  review        Review      @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  institution   Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+
+  @@index([institutionId, createdAt])
+}
+
+model ReviewReport {
+  id          String   @id @default(cuid())
+  reviewId    String
+  reporterId  String
+  reason      String   @db.VarChar(80)
+  details     String?  @db.VarChar(2000)
+  createdAt   DateTime @default(now())
+  review      Review   @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  reporter    User     @relation(fields: [reporterId], references: [id], onDelete: Restrict)
+  moderationCase ModerationCase?
+
+  @@unique([reviewId, reporterId])
+  @@index([createdAt])
+}
+
+model ModerationCase {
+  id             String           @id @default(cuid())
+  reviewId       String?
+  institutionId  String?
+  reportId       String?          @unique
+  status         ModerationStatus @default(OPEN)
+  reasonCode     String
+  summary        String?          @db.VarChar(2000)
+  assignedTo     String?
+  resolvedAt     DateTime?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  review         Review?          @relation(fields: [reviewId], references: [id], onDelete: SetNull)
+  institution    Institution?     @relation(fields: [institutionId], references: [id], onDelete: SetNull)
+  report         ReviewReport?    @relation(fields: [reportId], references: [id], onDelete: SetNull)
+  actions        ModerationAction[]
+
+  @@index([status, createdAt])
+  @@index([assignedTo, status])
+}
+
+model ModerationAction {
+  id              String               @id @default(cuid())
+  caseId          String
+  actorUserId     String
+  actor           User                 @relation("ModerationActor", fields: [actorUserId], references: [id], onDelete: Restrict)
+  action          ModerationActionType
+  reason          String               @db.VarChar(2000)
+  createdAt       DateTime             @default(now())
+  moderationCase  ModerationCase       @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  @@index([caseId, createdAt])
+}
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  actorUserId String?
+  action      String
+  entityType  String
+  entityId    String
+  requestId   String?
+  ipAddress   String?
+  metadata    Json?
+  createdAt   DateTime @default(now())
+  actor       User?    @relation("AuditActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([entityType, entityId, createdAt])
+  @@index([actorUserId, createdAt])
+  @@index([action, createdAt])
+}
+
+
+model Plan {
+  id              String             @id @default(cuid())
+  code            String             @unique
+  name            String
+  description     String?            @db.VarChar(2000)
+  billingInterval BillingInterval
+  priceMinor      Int
+  currency        String             @default("INR") @db.VarChar(3)
+  isActive        Boolean            @default(false)
+  entitlements    PlanEntitlement[]
+  subscriptions   Subscription[]
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  @@index([isActive, billingInterval])
+}
+
+model PlanEntitlement {
+  id       String @id @default(cuid())
+  planId   String
+  key      String
+  value    Json
+  plan     Plan   @relation(fields: [planId], references: [id], onDelete: Cascade)
+
+  @@unique([planId, key])
+  @@index([key])
+}
+
+model Subscription {
+  id                    String             @id @default(cuid())
+  institutionId         String
+  planId                String
+  provider              String             @default("razorpay")
+  providerCustomerId    String?
+  providerSubscriptionId String?
+  status                SubscriptionStatus @default(PENDING_AUTHORIZATION)
+  planNameSnapshot      String
+  priceMinor            Int
+  currency              String             @db.VarChar(3)
+  billingInterval       BillingInterval
+  currentPeriodStart    DateTime?
+  currentPeriodEnd      DateTime?
+  trialEndsAt           DateTime?
+  cancelAtPeriodEnd     Boolean            @default(false)
+  cancelledAt           DateTime?
+  institution           Institution        @relation(fields: [institutionId], references: [id], onDelete: Restrict)
+  plan                  Plan               @relation(fields: [planId], references: [id], onDelete: Restrict)
+  paymentEvents         PaymentEvent[]
+  invoices              Invoice[]
+  refunds               Refund[]
+  createdAt             DateTime           @default(now())
+  updatedAt             DateTime           @updatedAt
+
+  @@unique([provider, providerSubscriptionId])
+  @@index([institutionId, status])
+  @@index([status, currentPeriodEnd])
+}
+
+model PaymentEvent {
+  id                  String             @id @default(cuid())
+  provider            String
+  providerEventId     String
+  eventType           String
+  status              PaymentEventStatus @default(RECEIVED)
+  signatureVerified   Boolean            @default(false)
+  payload             Json
+  processingError     String?            @db.VarChar(2000)
+  subscriptionId      String?
+  subscription        Subscription?      @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+  receivedAt          DateTime           @default(now())
+  processedAt         DateTime?
+
+  @@unique([provider, providerEventId])
+  @@index([status, receivedAt])
+  @@index([subscriptionId, receivedAt])
+}
+
+model Invoice {
+  id                String        @id @default(cuid())
+  subscriptionId    String
+  providerInvoiceId String?
+  invoiceNumber     String?
+  amountMinor       Int
+  currency          String        @db.VarChar(3)
+  status            InvoiceStatus @default(ISSUED)
+  dueAt             DateTime?
+  paidAt            DateTime?
+  hostedInvoiceUrl  String?
+  subscription      Subscription  @relation(fields: [subscriptionId], references: [id], onDelete: Restrict)
+  refunds           Refund[]
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  @@unique([subscriptionId, providerInvoiceId])
+  @@index([status, dueAt])
+}
+
+model Refund {
+  id              String       @id @default(cuid())
+  subscriptionId  String
+  invoiceId       String?
+  provider        String
+  providerRefundId String?
+  amountMinor     Int
+  currency        String       @db.VarChar(3)
+  status          RefundStatus @default(PENDING)
+  reason          String?      @db.VarChar(1000)
+  processedAt     DateTime?
+  subscription    Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Restrict)
+  invoice         Invoice?     @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  @@unique([provider, providerRefundId])
+  @@index([subscriptionId, createdAt])
+}

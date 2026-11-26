@@ -1,0 +1,23 @@
+{
+  "name": "edusetu-platform",
+  "version": "0.1.0",
+  "private": true,
+  "description": "EduSetu commercial education relationship platform",
+  "workspaces": [
+    "apps/*"
+  ],
+  "scripts": {
+    "dev:api": "npm run start:dev --workspace @edusetu/api",
+    "build:api": "npm run build --workspace @edusetu/api",
+    "lint:api": "npm run lint --workspace @edusetu/api",
+    "test:api": "npm run test --workspace @edusetu/api",
+    "db:generate": "npm run prisma:generate --workspace @edusetu/api",
+    "db:migrate": "npm run prisma:migrate --workspace @edusetu/api --",
+    "db:seed": "npm run prisma:seed --workspace @edusetu/api",
+    "db:bootstrap-admin": "npm run db:bootstrap-admin --workspace @edusetu/api",
+    "dev:web": "npm run dev --workspace @edusetu/web",
+    "build:web": "npm run build --workspace @edusetu/web",
+    "start:web": "npm run start --workspace @edusetu/web",
+    "lint:web": "npm run lint --workspace @edusetu/web"
+  }
+}
